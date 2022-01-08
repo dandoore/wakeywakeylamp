@@ -7,7 +7,14 @@
 //   Fauxmo ESP - https://github.com/vintlabs/fauxmoESP
 //   Dimmable Light - https://github.com/fabianoriccardi/dimmable-light
 //
+// Changes needed:
+//
 // Rename 'credentials.sample.h' to 'credentials.h' and edit to put in WiFi details
+//
+// Edit libraries:
+//
+// Dimmable Light - FILTER_INT_PERIOD - uncomment FILTER_INT_PERIOD define at the begin of thyristor.cpp 
+// Dimmable Light - MONITOR_FREQUENCY - uncomment MONITOR_FREQUENCY define at the begin of thyristor.h
 //
 // Edit the values in the #### section only. 
 
@@ -137,14 +144,15 @@ void manual_on() {
 
   DimmableLight * dimLight = dlm.get(LAMP_NAME);
 
+  manualon = true;
+  if (dimmingup) dimming_cancel(); // If called from fadeup, scrap it and make manual (can't do this from within fadeup?)
+
   // Fast fade up from current value to MAXBRIGHT
 
   for (int count = dimLight -> getBrightness(); count < (MAXBRIGHT + 1); count++) {
     dimLight -> setBrightness(count);
     delay(ONOFFRAMP);
   }
-  manualon = true;
-  if (dimmingup) dimming_cancel(); // If dimming up, scrap it and make manual
 
   // Tell Alexa state
   fauxmo.setState(ALEXA_NAME, true, dimLight -> getBrightness());
@@ -158,21 +166,23 @@ void manual_on() {
 void manual_off() {
 
   DimmableLight * dimLight = dlm.get(LAMP_NAME);
-
-  // Fast Fade down from current value but onlt to MINBRIGHT then turn off
+  
+  manualon = false;
+  
+  // Fast Fade down from current value but only to MINBRIGHT then turn off
 
   for (int count = dimLight -> getBrightness(); count > MINBRIGHT; count--) {
     dimLight -> setBrightness(count);
     delay(ONOFFRAMP);
   }
   dimLight -> setBrightness(0);
-  manualon = false;
+
 
   // Tell Alexa state
   fauxmo.setState(ALEXA_NAME, false, dimLight -> getBrightness());
   
   if (sleepcounter) {
-    Serial.println("Manual Off: Sleep counter expired");
+    Serial.println("Manual Off: Clearing sleep counter");
     dim.detach(); // Stop calling dim sleep counter routine;
     sleepcounter = false;
   }
@@ -267,9 +277,9 @@ void loop() {
     static unsigned long last = millis();
     if (millis() - last > 5000) {
         last = millis();
-        //DimmableLight* dimLight = dlm.get(LAMP_NAME);
-        // Serial.println(String("[DEBUG] Brightness:") + dimLight->getBrightness());
-        //Serial.println(String("[DEBUG] Frequency: ") + dimLight->getDetectedFrequency());
+        DimmableLight* dimLight = dlm.get(LAMP_NAME);
+        Serial.println(String("[DEBUG] Brightness:") + dimLight->getBrightness());
+        Serial.println(String("[DEBUG] Frequency: ") + dimLight->getDetectedFrequency());
         //Serial.println(String("[DEBUG] Manualon:") + manualon);
         //Serial.println(String("[DEBUG] Alexaon:") + alexaon);
         // Serial.println(String("[DEBUG] Dimmingup:") + dimmingup);
