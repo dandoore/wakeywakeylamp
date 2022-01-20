@@ -54,10 +54,10 @@
 
 // Arduino pin assignments
 
-const int powerToggle = 13; // D7 on ESP8266
-const int syncPin = 4; // D2 on ESP8266
-const int psmPin = 5; // D1 on ESP8266
-const int embeddedLEDPin = 2; // ESP-12 LED
+const int powertoggle = 13; // D7 on ESP8266
+const int syncpin = 4; // D2 on ESP8266
+const int psmpin = 5; // D1 on ESP8266
+const int embeddedLEDpin = 2; // ESP-12 LED
 
 // ################################################################################################################
 
@@ -73,9 +73,9 @@ static uint8_t count = 0;
 // Status flags
 
 bool dimmingup = false;
-bool manualon = false;
-bool alexahasspoken = false;
-bool alexaon = false;
+bool manualonoff = false;
+bool alexacommand = false;
+bool alexaonoff = false;
 bool sleepcounter = false;
 
 // Classes
@@ -95,7 +95,7 @@ void wifiSetup() {
   Serial.printf("[WIFI] Connecting to %s ", WIFI_SSID);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
 
-  // Wait
+  // Wait for connection
   while (WiFi.status() != WL_CONNECTED) {
     Serial.print(".");
     delay(100);
@@ -103,7 +103,7 @@ void wifiSetup() {
   Serial.println();
 
   // Connected!
-  digitalWrite(embeddedLEDPin, LOW);
+  digitalWrite(embeddedLEDpin, LOW);
   Serial.printf("[WIFI] STATION Mode, SSID: %s, IP address: %s\n", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
 }
 
@@ -134,8 +134,8 @@ void fauxmoSetup() {
 
     if (strcmp(device_name, ALEXA_NAME) == 0) {
       Serial.println("Valid command recieved");
-      alexahasspoken = true;
-      alexaon = state;
+      alexacommand = true;
+      alexaonoff = state;
     }
   });
 }
@@ -144,8 +144,8 @@ void manual_on() {
 
   DimmableLight * dimLight = dlm.get(LAMP_NAME);
 
-  manualon = true;
-  if (dimmingup) dimming_cancel(); // If called from fadeup, scrap it and make manual (can't do this from within fadeup?)
+  manualonoff = true;
+  if (dimmingup) dimming_cancel(); // If called from fadeup, scrap dimming and make manual
 
   // Fast fade up from current value to MAXBRIGHT
 
@@ -160,14 +160,14 @@ void manual_on() {
   Serial.println("Manual On: Setting sleep counter");
   sleepcounter = true;
   sleepvalue = SLEEPVAL * 60;
-  dim.once(sleepvalue, manual_off);
+  dim.once(sleepvalue, manual_off); // Call dim sleep counter routine for single instance
 }
 
 void manual_off() {
 
   DimmableLight * dimLight = dlm.get(LAMP_NAME);
   
-  manualon = false;
+  manualonoff = false;
   
   // Fast Fade down from current value but only to MINBRIGHT then turn off
 
@@ -183,7 +183,7 @@ void manual_off() {
   
   if (sleepcounter) {
     Serial.println("Manual Off: Clearing sleep counter");
-    dim.detach(); // Stop calling dim sleep counter routine;
+    dim.detach(); // Stop calling dim sleep counter routine
     sleepcounter = false;
   }
 }
@@ -204,7 +204,7 @@ void dimming_up() {
 
 void dimming_cancel() {
   DimmableLight * dimLight = dlm.get(LAMP_NAME);
-  if (!manualon) dimLight -> setBrightness(0);
+  if (!manualonoff) dimLight -> setBrightness(0);
 
    // Tell Alexa state
   fauxmo.setState(ALEXA_NAME, false, dimLight -> getBrightness());
@@ -239,22 +239,22 @@ void setup() {
 
   // Pins
 
-  pinMode(powerToggle, INPUT_PULLUP); // Manual light switch (pulls to ground)
-  pinMode(embeddedLEDPin, OUTPUT); // Initialize GPIO2 pin as an output
-  digitalWrite(embeddedLEDPin, HIGH); // Turn off (HIGH=off)
+  pinMode(powertoggle, INPUT_PULLUP); // Manual light switch (pulls to ground)
+  pinMode(embeddedLEDpin, OUTPUT); // Initialize GPIO2 pin as an output
+  digitalWrite(embeddedLEDpin, HIGH); // Turn off (HIGH=off)
 
   // Dimmer library
   Serial.println("Dimmable Light for Arduino (Fabiano Riccardi - https://github.com/fabianoriccardi/dimmable-light)");
   Serial.println("Initializing the dimmable light class... ");
 
   // Add in single light LAMP_NAME
-  if (dlm.add(String(LAMP_NAME), psmPin)) {
+  if (dlm.add(String(LAMP_NAME), psmpin)) {
     Serial.println("Light added correctly");
   } else {
     Serial.println("Light cannot be added");
   }
 
-  DimmableLight::setSyncPin(syncPin);
+  DimmableLight::setSyncPin(syncpin);
   DimmableLightManager::begin();
   Serial.println("Light mananger started");
   
@@ -280,10 +280,10 @@ void loop() {
         DimmableLight* dimLight = dlm.get(LAMP_NAME);
         Serial.println(String("[DEBUG] Brightness:") + dimLight->getBrightness());
         Serial.println(String("[DEBUG] Frequency: ") + dimLight->getDetectedFrequency());
-        //Serial.println(String("[DEBUG] Manualon:") + manualon);
-        //Serial.println(String("[DEBUG] Alexaon:") + alexaon);
+        //Serial.println(String("[DEBUG] Manualonoff:") + manualonoff);
+        //Serial.println(String("[DEBUG] Alexaonoff:") + alexaonoff);
         // Serial.println(String("[DEBUG] Dimmingup:") + dimmingup);
-        //Serial.println(String("[DEBUG] Switch:") + digitalRead(powerToggle));
+        //Serial.println(String("[DEBUG] Switch:") + digitalRead(powertoggle));
         Serial.printf("[DEBUG] Free heap: %d bytes\n", ESP.getFreeHeap());
     }
  
@@ -291,24 +291,24 @@ void loop() {
 
   fauxmo.handle(); // Poll for Alexa command - flags set by callback routine
 
-  if (alexahasspoken) {
-    if (alexaon && manualon && !dimmingup) { // Command ON : Lamp on manually, not in dim sequence: Do nothing
+  if (alexacommand) {
+    if (alexaonoff && manualonoff && !dimmingup) { // Command ON : Lamp on manually, not in dim sequence: Do nothing
       Serial.println("Alexa: Already on");
-    } else if (alexaon && dimmingup && !manualon) { // Command ON : Lamp in dim sequence, not manually on: Turn on manually
+    } else if (alexaonoff && dimmingup && !manualonoff) { // Command ON : Lamp in dim sequence, not manually on: Turn on manually
       Serial.println("Alexa: Cancelling dimming - turning full on");
       dimming_cancel();
       manual_on();
-    } else if (alexaon && !manualon && !dimmingup) { // Command ON : Lamp not manually on and not in dim sequence: Enter dim sequence
+    } else if (alexaonoff && !manualonoff && !dimmingup) { // Command ON : Lamp not manually on and not in dim sequence: Enter dim sequence
       Serial.println("Alexa: Starting dimming up");
       dimming_up();
-    } else if (!alexaon && manualon && !dimmingup) { // Command OFF : Lamp manually on and not in dim sequence: Turn off
+    } else if (!alexaonoff && manualonoff && !dimmingup) { // Command OFF : Lamp manually on and not in dim sequence: Turn off
       Serial.println("Alexa: Turning off");
       manual_off();
-    } else if (!alexaon && dimmingup && !manualon) { // Command OFF : Lamp in dim sequence, not manually on: Cancel dim & turn off
+    } else if (!alexaonoff && dimmingup && !manualonoff) { // Command OFF : Lamp in dim sequence, not manually on: Cancel dim & turn off
       Serial.println("Alexa: Cancelling dimming - turning off");
       dimming_cancel();
       manual_off();
-    } else if (!alexaon && !manualon && !dimmingup) { // Command OFF : Lamp not manually on and not in dim sequence: Do nothing
+    } else if (!alexaonoff && !manualonoff && !dimmingup) { // Command OFF : Lamp not manually on and not in dim sequence: Do nothing
       Serial.println("Alexa: Already off");
     }
 
@@ -316,7 +316,7 @@ void loop() {
     fauxmo.handle(); // Poll for Alexa command to junk
     fauxmo.handle(); // Poll for Alexa command to junk
     fauxmo.handle(); // Poll for Alexa command to junk
-    alexahasspoken = false;
+    alexacommand = false;
   }
 
   // WiFi Watchdog
@@ -324,9 +324,9 @@ void loop() {
   // Light ESP LED if connected, otherwise re-init the WiFi
 
   if (WiFi.status() == WL_CONNECTED) {
-    digitalWrite(embeddedLEDPin, LOW);
+    digitalWrite(embeddedLEDpin, LOW);
   } else {
-    digitalWrite(embeddedLEDPin, HIGH);
+    digitalWrite(embeddedLEDpin, HIGH);
     Serial.println("WiFi not connected - restarting");
     wifiSetup();
     fauxmoSetup();
@@ -334,15 +334,15 @@ void loop() {
 
   // Handle button press
 
-  if (digitalRead(powerToggle) == LOW) { // If switch pressed
-    if (manualon && !dimmingup) { // Switch Pressed : Lamp on manually, not in dim sequence: Turn off
+  if (digitalRead(powertoggle) == LOW) { // If switch pressed
+    if (manualonoff && !dimmingup) { // Switch Pressed : Lamp on manually, not in dim sequence: Turn off
       Serial.println("Switch: Turning off");
       manual_off();
-    } else if (dimmingup && !manualon) { // Switch Pressed : Lamp in dim sequence, not manually on: Cancel dim & turn off
+    } else if (dimmingup && !manualonoff) { // Switch Pressed : Lamp in dim sequence, not manually on: Cancel dim & turn off
       Serial.println("Switch: Cancelling dimming - turning off");
       dimming_cancel();
       manual_off();
-    } else if (!manualon && !dimmingup) { // Switch Pressed : Lamp not manually on and not in dim sequence: Turn on
+    } else if (!manualonoff && !dimmingup) { // Switch Pressed : Lamp not manually on and not in dim sequence: Turn on
       Serial.println("Switch: Turning on");
       manual_on();
     }
